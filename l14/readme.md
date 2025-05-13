@@ -1,12 +1,12 @@
 ## Створення коллекцій та загрузка данних.
 
 Підключення до бази
-```
+```javascript
 use gymDatabase;
 ```
 
 **Відповідь**
-```
+```javascript
 switched to db gymDatabase
 ```
 
@@ -19,7 +19,7 @@ db.createCollection("trainers")
 ```
 
 **Відповідь**
-```
+```javascript
 { ok: 1 }
 ```
 
