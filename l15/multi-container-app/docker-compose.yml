@@ -1,0 +1,38 @@
+version: '3'
+
+services:
+  web:
+    image: nginx:latest
+    ports:
+      - "80"
+    volumes:
+      - web-data:/usr/share/nginx/html
+    networks:
+      - appnet
+    depends_on:
+      - db
+      - cache
+
+  db:
+    image: postgres:latest
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: appdb
+    networks:
+      - appnet
+
+  cache:
+    image: redis:latest
+    networks:
+      - appnet
+
+networks:
+  appnet:
+    driver: bridge
+
+volumes:
+  web-data:
+  db-data:
