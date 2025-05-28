@@ -1,0 +1,196 @@
+# ServiceAccount для Falco
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: falco
+  namespace: kube-system
+  labels:
+    app: falco
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: falco
+  labels:
+    app: falco
+rules:
+- apiGroups: [""]
+  resources: 
+    - nodes
+    - namespaces
+    - pods
+    - replicationcontrollers
+    - services
+    - events
+    - configmaps
+    - persistentvolumes
+    - persistentvolumeclaims
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["apps"]
+  resources:
+    - daemonsets
+    - deployments
+    - replicasets
+    - statefulsets
+  verbs: ["get", "list", "watch"]
+# Доступ до batch ресурсів
+- apiGroups: ["batch"]
+  resources:
+    - jobs
+    - cronjobs
+  verbs: ["get", "list", "watch"]
+---
+# ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: falco
+  labels:
+    app: falco
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: falco
+subjects:
+- kind: ServiceAccount
+  name: falco
+  namespace: kube-system
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: falco-config
+  namespace: kube-system
+  labels:
+    app: falco
+data:
+  falco.yaml: |
+    # Базова конфігурація Falco
+    json_output: true
+    json_include_output_property: true
+    log_level: info
+    log_stderr: true
+    log_syslog: false
+    
+    # Правила вивода
+    priority: debug
+    
+    # Буферизація подій
+    buffered_outputs: false
+    
+    # Системні виклики для моніторингу
+    syscall_event_drops:
+      actions:
+        - log
+        - alert
+      rate: 0.03
+      max_burst: 10
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: falco
+  namespace: kube-system
+  labels:
+    app: falco
+spec:
+  selector:
+    matchLabels:
+      app: falco
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        app: falco
+    spec:
+      serviceAccountName: falco
+      tolerations:
+      - key: node-role.kubernetes.io/master
+        effect: NoSchedule
+      - key: node-role.kubernetes.io/control-plane
+        effect: NoSchedule
+      hostNetwork: true
+      hostPID: true
+      containers:
+      - name: falco
+        image: falcosecurity/falco:latest
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          privileged: true
+        env:
+        - name: HOST_ROOT
+          value: /host
+        - name: FALCO_BPF_PROBE
+          value: ""
+        args:
+          - /usr/bin/falco
+          - --cri
+          - /run/containerd/containerd.sock
+          - -pk
+        volumeMounts:
+        - mountPath: /host/proc
+          name: proc-fs
+          readOnly: true
+        - mountPath: /host/boot
+          name: boot-fs
+          readOnly: true
+        - mountPath: /host/lib/modules
+          name: lib-modules
+          readOnly: true
+        - mountPath: /host/usr
+          name: usr-fs
+          readOnly: true
+        - mountPath: /host/dev
+          name: dev-fs
+        - mountPath: /host/var/run/docker.sock
+          name: docker-socket
+          readOnly: true
+        - mountPath: /run/containerd/containerd.sock
+          name: containerd-socket
+          readOnly: true
+        - mountPath: /host/etc
+          name: etc-fs
+          readOnly: true
+        - mountPath: /etc/falco
+          name: falco-config
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 100m
+            memory: 256Mi
+      volumes:
+      - name: proc-fs
+        hostPath:
+          path: /proc
+      - name: boot-fs
+        hostPath:
+          path: /boot
+      - name: lib-modules
+        hostPath:
+          path: /lib/modules
+      - name: usr-fs
+        hostPath:
+          path: /usr
+      - name: dev-fs
+        hostPath:
+          path: /dev
+      - name: etc-fs
+        hostPath:
+          path: /etc
+      - name: docker-socket
+        hostPath:
+          path: /var/run/docker.sock
+          type: Socket
+      - name: containerd-socket
+        hostPath:
+          path: /run/containerd/containerd.sock
+          type: Socket
+      - name: falco-config
+        configMap:
+          name: falco-config
+          optional: true
